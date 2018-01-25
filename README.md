@@ -33,7 +33,7 @@ volumes, but the sample will work without modification.
 ### console-config.yaml
 This file controls the configuration of the web console.  
 Copy `files/console-config.yaml.sample` to `files/console-config.yaml`  
-and then edit the file, replacing <xxx.xxx.xxx.xxx>` with the ip address  
+and then edit the file, replacing `<xxx.xxx.xxx.xxx>` with the ip address  
 that you want the web console to listen on, usually the same as your  
 public master if you are doing local development.
 
