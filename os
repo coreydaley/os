@@ -1,4 +1,4 @@
-#!/bin/bash
+#! /usr/bin/env bash
 
 #               OOOOOOOOO        SSSSSSSSSSSSSSS
 #             OO:::::::::OO    SS:::::::::::::::S
@@ -22,6 +22,7 @@
 # A script to make OpenShift Origin development more pleasurable
 #
 
+#
 # OpenShift Origin
 # https://github.com/openshift/origin
 #
