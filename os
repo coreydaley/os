@@ -295,7 +295,7 @@ case "$1" in
     run_as_admin "oc create namespace openshift-web-console"
     run_as_admin "oc project openshift-web-console"
     run_as_admin "oc create -f install/origin-web-console/console-template.yaml"
-    oc new-app --template=openshift-web-console -p "API_SERVER_CONFIG=$(cat ${CANONICAL_DIR}/files/console-config.yaml)"
+    oc new-app --template=openshift-web-console -p "API_SERVER_CONFIG=$(cat ${CANONICAL_DIR}/files/console-config.yaml)" --config=$OS_KUBE_CONFIG_PATH
 
     message "INFO" "Loading ${OS} image streams from examples directory"
     run_as_admin "oc create -f $OS_TEMPLATE_PATH/image-streams/image-streams-${OS}7.json -n openshift"
