@@ -294,8 +294,9 @@ case "$1" in
     message "INFO" "Setting up webconsole"
     run_as_admin "oc create namespace openshift-web-console"
     run_as_admin "oc project openshift-web-console"
-    run_as_admin "oc create -f install/origin-web-console/console-template.yaml"
-    oc new-app --template=openshift-web-console -p "API_SERVER_CONFIG=$(cat ${CANONICAL_DIR}/files/console-config.yaml)" --config=$OS_KUBE_CONFIG_PATH
+    oc login -u system:admin
+    oc process -f install/origin-web-console/rbac-template.yaml | oc auth reconcile -f -
+    oc process -f install/origin-web-console/console-template.yaml -p "API_SERVER_CONFIG=$(cat ${CANONICAL_DIR}/files/console-config.yaml)" | oc apply -n openshift-web-console -f -
 
     message "INFO" "Loading ${OS} image streams from examples directory"
     run_as_admin "oc create -f $OS_TEMPLATE_PATH/image-streams/image-streams-${OS}7.json -n openshift"
@@ -350,6 +351,7 @@ case "$1" in
     mkdir /tmp/volume2
     mkdir /tmp/volume3
     chmod a+rw /tmp/volume*
+    chcon -t svirt_sandbox_file_t /tmp/volume*
     $OS_BIN_PATH/oc create -f ${CANONICAL_DIR}/files/volumes.yaml
   ;;
   # Copies the source-to-image source code into the correct vendor directory for testing
