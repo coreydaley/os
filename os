@@ -329,19 +329,10 @@ case "$1" in
       namespace=$user
     fi
     message "INFO" "Creating user ${user}"
-    run_as_admin "oc create user ${user}"
-    run_as_admin "oc create identity anypassword:${user}"
-    run_as_admin "oc create useridentitymapping anypassword:${user} ${user}"
+    oc login -u ${user} -p ${user}
 
     message "INFO" "Creating namespace ${namespace}"
-    run_as_admin "oc create namespace ${namespace}"
-
-    message "INFO" "Granting user ${user} access to namespace ${namespace}"
-    run_as_admin "oc project ${namespace}"
-    run_as_admin "oc adm policy add-role-to-user admin ${user}"
-    run_as_admin "oc adm policy add-role-to-user edit -z deployer"
-    run_as_admin "oc adm policy add-role-to-user edit -z builder"
-    run_as_admin "oc adm policy add-role-to-user edit -z jenkins"
+    oc new-project ${namespace}
   ;;
   # Creates persistent volumes based on the localvolumes.yaml file
   create-volumes|cv)
