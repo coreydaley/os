@@ -284,7 +284,7 @@ case "$1" in
     fi
 
     message "INFO" "Setting up router"
-    run_as_admin "oc adm policy add-scc-to-user hostnetwork system:serviceaccount:default:router"
+    run_as_admin "oc adm policy add-scc-to-user hostnetwork -z router"
     run_as_admin "oc adm router"
     run_as_admin "oc rollout latest dc/router"
 
@@ -295,7 +295,6 @@ case "$1" in
     run_as_admin "oc create namespace openshift-web-console"
     run_as_admin "oc project openshift-web-console"
     oc login -u system:admin
-    oc process -f install/origin-web-console/rbac-template.yaml | oc auth reconcile -f -
     oc process -f install/origin-web-console/console-template.yaml -p "API_SERVER_CONFIG=$(cat ${CANONICAL_DIR}/files/console-config.yaml)" | oc apply -n openshift-web-console -f -
 
     message "INFO" "Loading ${OS} image streams from examples directory"
