@@ -32,15 +32,6 @@
 # package structure and that $GOPATH is set correctly
 #
 
-# https://stackoverflow.com/questions/59895/getting-the-source-directory-of-a-bash-script-from-within
-SOURCE="${BASH_SOURCE[0]}"
-while [ -h "$SOURCE" ]; do
-  DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
-  SOURCE="$(readlink "$SOURCE")"
-  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
-done
-CANONICAL_DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
-
 # Displays a formatted message to the console
 # Example: message "LEVEL" "This is a message"
 # Output: [OS] [LEVEL] This is a message
@@ -60,39 +51,7 @@ fi
 
 # Define some standard file and folder locations
 OS_OUTPUT_PATH=$OS_PATH/_output
-OS_TEMPLATE_PATH=$OS_PATH/examples
 OS_BIN_PATH=$OS_OUTPUT_PATH/local/bin/linux/amd64
-OS_CONFIG_PATH=$OS_BIN_PATH/openshift.local.config
-OS_KUBE_CONFIG_PATH=$OS_CONFIG_PATH/master/admin.kubeconfig
-KUBE_CONFIG_DIR=$HOME/.kube
-KUBE_CONFIG_PATH=$KUBE_CONFIG_DIR/config
-
-
-# Make sure that the ~/.kube directory exists
-if [ ! -d $KUBE_CONFIG_DIR ]; then
-  message "INFO" "Creating $KUBE_CONFIG_DIR"
-  mkdir $KUBE_CONFIG_DIR
-fi
-
-# Make sure that these files exist
-# in the correct location
-FILES=(
-"volumes.yaml"
-"console-config.yaml"
-)
-missing_files=false
-for FILE in ${FILES[@]}
-do
-  if [ ! -e ${CANONICAL_DIR}/files/${FILE} ]; then
-    missing_files=true
-    message "ERROR" "Missing ${CANONICAL_DIR}/files/${FILE}"
-  fi
-
-done
-if $missing_files; then
-  message "" "Create the above missing files and try running the command again."
-  exit
-fi
 
 # Delete file if it exists
 function delete_if_exists() {
@@ -108,12 +67,6 @@ function delete_folder_if_exists() {
     message "INFO" "Deleting $1"
     rm -r $1
   fi
-}
-
-# Run command as system:admin
-function run_as_admin() {
-  message "INFO" "Running command as system:admin: ${1}"
-  $OS_BIN_PATH/${1} --config=$OS_KUBE_CONFIG_PATH
 }
 
 case "$1" in
@@ -148,8 +101,7 @@ case "$1" in
   clean)
     $0 stop
     message "INFO" "Cleaning OpenShift"
-    rm -rf $KUBE_CONFIG_DIR/*
-    sudo make clean
+    make clean
   ;;
   # Removes all containers, volumes, and images from docker
   # and cleans up used space
@@ -171,10 +123,8 @@ case "$1" in
   # Removes the configuration files generated when starting origin
   cleanconfig|cc)
     $0 stop
-    message "INFO" "Cleaning OpenShift Configuration"
-    delete_folder_if_exists $OS_CONFIG_PATH/openshift.local.config
-    delete_folder_if_exists $OS_CONFIG_PATH/openshift.local.etcd
-    delete_folder_if_exists $OS_CONFIG_PATH/openshift.local.volumes
+    message "INFO" "Cleaning Cluster Up Configuration"
+    delete_folder_if_exists $OS_PATH/openshift.local.clusterup
   ;;
   # Runs all of the various clean commands
   cleanall|ca)
@@ -224,28 +174,13 @@ case "$1" in
   start|restart|reload)
     $0 stop
     $0 build
-    pushd $OS_BIN_PATH >> /dev/null
-    if [ ! -f $OS_CONFIG_PATH/master/master-config.yaml ]; then
-      message "INFO" "Creating master and node configuration directories"
-      sudo $OS_BIN_PATH/openshift start --write-config=$OS_CONFIG_PATH --latest-images=true
-      sudo sed -i -e 's/router.default.svc.cluster.local/127.0.0.1.nip.io/' $OS_CONFIG_PATH/master/master-config.yaml
-      mkdir -p $OS_CONFIG_PATH
-      sudo chmod +r $OS_KUBE_CONFIG_PATH
-      sudo cp $OS_KUBE_CONFIG_PATH $KUBE_CONFIG_PATH
-      sudo chown $USER:$USER $OS_KUBE_CONFIG_PATH
-      sudo chown $USER:$USER $KUBE_CONFIG_PATH
-    fi
-    message "INFO" "Starting OpenShift"
-    sudo $OS_BIN_PATH/openshift start --loglevel=5 --master-config=$OS_CONFIG_PATH/master/master-config.yaml --node-config=$OS_CONFIG_PATH/node-`hostname`/node-config.yaml > $OS_OUTPUT_PATH/openshift-dev.log  2>&1 &
-    popd >> /dev/null
+    $OS_BIN_PATH/oc cluster up --tag=latest --server-loglevel=5
     $0 symlink-binaries
   ;;
   # Stops Origin
   stop)
     message "INFO" "Stopping OpenShift"
-    sudo pkill -x openshift
-    docker ps | awk 'index($NF,"k8s_")==1 { print $1 }' | xargs -l -r docker stop
-    mount | grep "openshift.local.volumes" | awk '{ print $3}' | xargs -l -r sudo umount
+    $OS_BIN_PATH/oc cluster down
   ;;
   # Symlinks the Origin binaries into ~/bin
   symlink-binaries|sb)
@@ -264,86 +199,7 @@ case "$1" in
   build-images|bi)
       message "INFO" "Building images"
       $0 build
-      hack/build-local-images.py
-  ;;
-  # Do some basic setup for Origin, must have run start first
-  # Sets up the registry, router, web console, and loads the default templates
-  # Also creates some persistent volumes and a user/project based
-  # on your user on your workstation
-  setup)
-    message "INFO" "Setting up OpenShift"
-    if [[ ! -z $2 ]]; then
-      if ! [[ $2 =~ ^(centos|rhel)$ ]]; then
-        message "ERROR" "Option \"$2\" not found, must be one of [centos, rhel]"
-        exit 1
-      else
-        OS=$2
-      fi
-    else
-      OS=centos
-    fi
-
-    message "INFO" "Setting up router"
-    run_as_admin "oc adm policy add-scc-to-user hostnetwork system:serviceaccount:default:router"
-    run_as_admin "oc adm router"
-    run_as_admin "oc rollout latest dc/router"
-
-    message "INFO" "Setting up registry"
-    run_as_admin "oc adm registry -n default"
-
-    message "INFO" "Setting up webconsole"
-    run_as_admin "oc create namespace openshift-web-console"
-    run_as_admin "oc project openshift-web-console"
-    oc login -u system:admin
-    oc process -f install/origin-web-console/rbac-template.yaml | oc auth reconcile -f -
-    oc process -f install/origin-web-console/console-template.yaml -p "API_SERVER_CONFIG=$(cat ${CANONICAL_DIR}/files/console-config.yaml)" | oc apply -n openshift-web-console -f -
-
-    message "INFO" "Loading ${OS} image streams from examples directory"
-    run_as_admin "oc create -f $OS_TEMPLATE_PATH/image-streams/image-streams-${OS}7.json -n openshift"
-
-    message "INFO" "Loading quickstarts and database templates from examples directory"
-    LOCATIONS=(
-              "jenkins"
-              "db-templates"
-              "quickstarts"
-    )
-    for l in ${LOCATIONS[@]}
-    do
-      for f in $OS_TEMPLATE_PATH/${l}/*.json
-      do
-        run_as_admin "oc create -f ${f} -n openshift"
-      done
-    done
-
-    $0 create-volumes
-    $0 create-user ${USER}
-  ;;
-  # Creates a user in Origin with a matching namespace
-  # If no username is passed, a user and namespace
-  # based on your workstation username is created
-  create-user|cu)
-    user=$2
-    if [[ ! -z $3 ]]; then
-      namespace=$3
-    else
-      namespace=$user
-    fi
-    message "INFO" "Creating user ${user}"
-    oc login -u ${user} -p ${user}
-
-    message "INFO" "Creating namespace ${namespace}"
-    oc new-project ${namespace}
-  ;;
-  # Creates persistent volumes based on the localvolumes.yaml file
-  create-volumes|cv)
-    message "INFO" "Creating persistent volumes"
-    sudo rm -rf /tmp/volume*
-    mkdir /tmp/volume1
-    mkdir /tmp/volume2
-    mkdir /tmp/volume3
-    chmod a+rw /tmp/volume*
-    chcon -t svirt_sandbox_file_t /tmp/volume*
-    $OS_BIN_PATH/oc create -f ${CANONICAL_DIR}/files/volumes.yaml
+      python2 hack/build-local-images.py
   ;;
   # Copies the source-to-image source code into the correct vendor directory for testing
   copys2i)
@@ -360,29 +216,10 @@ case "$1" in
   # Runs the gofmt script on the origin code and fixes any issues
   gofmt|g)
     message "INFO" "Running gofmt"
-    PERMISSIVE_GO=y hack/verify-gofmt.sh
-    # PERMISSIVE_GO=y hack/verify-gofmt.sh | xargs -n 1 gofmt -s -w
+    PERMISSIVE_GO=y hack/verify-gofmt.sh | xargs -n 1 gofmt -s -w
 
   ;;
-  # Logs you into Origin
-  # If no username is passed, you are logged in as your workstation user
-  # If sys is passed as the username, you are logged in as system:admin
-  login|l)
-    if [ -z $2 ]; then
-      message "INFO" "Logging in as ${USER}"
-      oc login --username=${USER} --password=${USER}
-      oc project ${USER}
-    elif [ $2 == "sys" ]; then
-      message "INFO" "Logging in as system:admin"
-      oc login -u system:admin
-      oc project default
-    else
-      message "INFO" "Logging in as $2"
-      oc login --username=$2 --password=$2
-      oc new-project $2
-    fi
-  ;;
-  # Runs the oc completion and oc adm completion commands and
+    # Runs the oc completion and oc adm completion commands and
   # copies the files into your home directory.
   # You will still need to source these files in your .bash_profile
   # or similar to get completion on the command line
