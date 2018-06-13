@@ -167,7 +167,8 @@ case "$1" in
   testextended|te)
     message "INFO" "Running Extended Test"
     delete_if_exists _output/local/bin/linux/amd64/extended.test
-    FOCUS="$2" test/extended/core.sh
+    # FOCUS="$2" test/extended/core.sh
+    KUBECONFIG=/home/cdaley/go/src/github.com/openshift/origin/openshift.local.clusterup/openshift-controller-manager/admin.kubeconfig FOCUS=$2 TEST_ONLY=true test/extended/core.sh
   ;;
   # Start (or restart) Origin
   # Does a bunch of setup if you are starting with a clean environment
