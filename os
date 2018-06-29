@@ -85,6 +85,7 @@ case "$1" in
   build)
     message "INFO" "Running make build"
     make build
+    $0 symlink-binaries
   ;;
   # Runs the make verify command
   verify)
@@ -175,7 +176,6 @@ case "$1" in
     $0 stop
     $0 build
     $OS_BIN_PATH/oc cluster up --tag=latest --server-loglevel=5
-    $0 symlink-binaries
   ;;
   # Stops Origin
   stop)
