@@ -65,7 +65,7 @@ function delete_if_exists() {
 function delete_folder_if_exists() {
   if [ -e $1 ]; then
     message "INFO" "Deleting $1"
-    rm -r $1
+    sudo rm -rf $1
   fi
 }
 
@@ -124,6 +124,7 @@ case "$1" in
   cleanconfig|cc)
     $0 stop
     message "INFO" "Cleaning Cluster Up Configuration"
+    for i in $(mount | grep openshift | awk '{ print $3}'); do sudo umount "$i"; done
     delete_folder_if_exists $OS_PATH/openshift.local.clusterup
   ;;
   # Runs all of the various clean commands
@@ -174,6 +175,7 @@ case "$1" in
   # Does a bunch of setup if you are starting with a clean environment
   start|restart|reload)
     $0 stop
+    $0 cleanconfig
     $0 build
     $OS_BIN_PATH/oc cluster up --tag=latest --server-loglevel=5
     $0 symlink-binaries
