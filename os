@@ -169,7 +169,7 @@ case "$1" in
     message "INFO" "Running Extended Test"
     delete_if_exists _output/local/bin/linux/amd64/extended.test
     # FOCUS="$2" test/extended/core.sh
-    KUBECONFIG=/home/cdaley/go/src/github.com/openshift/origin/openshift.local.clusterup/openshift-controller-manager/admin.kubeconfig FOCUS=$2 TEST_ONLY=true test/extended/core.sh
+    KUBECONFIG=/home/${USER}/go/src/github.com/openshift/origin/openshift.local.clusterup/openshift-controller-manager/admin.kubeconfig FOCUS=$2 TEST_ONLY=true test/extended/core.sh
   ;;
   # Start (or restart) Origin
   # Does a bunch of setup if you are starting with a clean environment
@@ -202,7 +202,7 @@ case "$1" in
   build-images|bi)
       message "INFO" "Building images"
       $0 build
-      python2 hack/build-local-images.py
+      python hack/build-local-images.py $2
   ;;
   # Copies the source-to-image source code into the correct vendor directory for testing
   copys2i)
