@@ -172,12 +172,12 @@ case "$1" in
     KUBECONFIG=/home/${USER}/go/src/github.com/openshift/origin/openshift.local.clusterup/openshift-controller-manager/admin.kubeconfig FOCUS=$2 TEST_ONLY=true test/extended/core.sh
   ;;
   # Start Origin
-  start|restart|reload)
+  start)
     $OS_BIN_PATH/oc cluster up --tag=latest --server-loglevel=5
     $0 symlink-binaries
   ;;
   # Restart (or reload) Origin
-  start|restart|reload)
+  restart|reload)
     $0 stop
     $0 cleanconfig
     $0 build
