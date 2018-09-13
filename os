@@ -65,7 +65,7 @@ function delete_if_exists() {
 function delete_folder_if_exists() {
   if [ -e $1 ]; then
     message "INFO" "Deleting $1"
-    rm -r $1
+    sudo rm -rf $1
   fi
 }
 
@@ -125,6 +125,7 @@ case "$1" in
   cleanconfig|cc)
     $0 stop
     message "INFO" "Cleaning Cluster Up Configuration"
+    for i in $(mount | grep openshift | awk '{ print $3}'); do sudo umount "$i"; done
     delete_folder_if_exists $OS_PATH/openshift.local.clusterup
   ;;
   # Runs all of the various clean commands
@@ -168,14 +169,19 @@ case "$1" in
   testextended|te)
     message "INFO" "Running Extended Test"
     delete_if_exists _output/local/bin/linux/amd64/extended.test
-    FOCUS="$2" test/extended/core.sh
+    # FOCUS="$2" test/extended/core.sh
+    KUBECONFIG=/home/${USER}/go/src/github.com/openshift/origin/openshift.local.clusterup/openshift-controller-manager/admin.kubeconfig FOCUS=$2 TEST_ONLY=true test/extended/core.sh
   ;;
-  # Start (or restart) Origin
-  # Does a bunch of setup if you are starting with a clean environment
-  start|restart|reload)
-    $0 stop
-    $0 build
+  # Start Origin
+  start)
     $OS_BIN_PATH/oc cluster up --tag=latest --server-loglevel=5
+  ;;
+  # Restart (or reload) Origin
+  restart|reload)
+    $0 stop
+    $0 cleanconfig
+    $0 build
+    $0 start
   ;;
   # Stops Origin
   stop)
@@ -199,7 +205,7 @@ case "$1" in
   build-images|bi)
       message "INFO" "Building images"
       $0 build
-      python2 hack/build-local-images.py
+      python hack/build-local-images.py $2
   ;;
   # Copies the source-to-image source code into the correct vendor directory for testing
   copys2i)
