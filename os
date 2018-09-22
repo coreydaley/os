@@ -248,21 +248,8 @@ case "$1" in
     run_as_admin "oc adm registry"
 
   ;;
-  # Setup the webconsole
-  # webconsole)
-  #   message "INFO" "Setting up webconsole"
-  #   run_as_admin "oc adm policy add-cluster-role-to-user cluster-admin admin"
-  #   oc login -u admin
-  #   source ./contrib/oc-environment.sh
-  #   ./bin/bridge
-
-
-  # ;;
-  # Do some basic setup for Origin, must have run start first
-  # Sets up the registry, router, web console, and loads the default templates
-  # Also creates some persistent volumes and a user/project based
-  # on your user on your workstation
-  setup)
+  # Setup the example imagestreams and templates
+  ist)
     message "INFO" "Setting up OpenShift"
     if [[ ! -z $2 ]]; then
       if ! [[ $2 =~ ^(centos|rhel)$ ]]; then
@@ -274,9 +261,6 @@ case "$1" in
     else
       OS=centos
     fi
-
-    $0 registry
-    $0 router
 
     message "INFO" "Loading ${OS} image streams from examples directory"
     run_as_admin "oc create -f $OS_TEMPLATE_PATH/image-streams/image-streams-${OS}7.json -n openshift"
@@ -295,7 +279,25 @@ case "$1" in
       done
     done
   ;;
-    # Runs the oc completion and oc adm completion commands and
+  # Setup the webconsole
+  # webconsole)
+  #   message "INFO" "Setting up webconsole"
+  #   run_as_admin "oc adm policy add-cluster-role-to-user cluster-admin admin"
+  #   oc login -u admin
+  #   source ./contrib/oc-environment.sh
+  #   ./bin/bridge
+
+
+  # ;;
+  # Do some basic setup for Origin, must have run start first
+  # Sets up the registry, router, and loads the example templates
+  # and imagestreams
+  setup)
+    $0 ist
+    $0 registry
+    $0 router
+  ;;
+  # Runs the oc completion and oc adm completion commands and
   # copies the files into your home directory.
   # You will still need to source these files in your .bash_profile
   # or similar to get completion on the command line
