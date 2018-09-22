@@ -50,8 +50,11 @@ else
 fi
 
 # Define some standard file and folder locations
-OS_OUTPUT_PATH=$OS_PATH/_output
+OS_OUTPUT_PATH=$OS_GO_DIR/_output
+OS_TEMPLATE_PATH=$OS_GO_DIR/examples
 OS_BIN_PATH=$OS_OUTPUT_PATH/local/bin/linux/amd64
+OS_CONFIG_PATH=$OS_GO_DIR/openshift.local.clusterup
+OS_KUBE_CONFIG_PATH=$OS_CONFIG_PATH/kube-apiserver/admin.kubeconfig
 
 # Delete file if it exists
 function delete_if_exists() {
@@ -65,8 +68,14 @@ function delete_if_exists() {
 function delete_folder_if_exists() {
   if [ -e $1 ]; then
     message "INFO" "Deleting $1"
-    rm -r $1
+    sudo rm -rf $1
   fi
+}
+
+# Run command as system:admin
+function run_as_admin() {
+  message "INFO" "Running command as system:admin: ${1}"
+  $OS_BIN_PATH/${1} --config=$OS_KUBE_CONFIG_PATH
 }
 
 case "$1" in
@@ -125,6 +134,7 @@ case "$1" in
   cleanconfig|cc)
     $0 stop
     message "INFO" "Cleaning Cluster Up Configuration"
+    for i in $(mount | grep openshift | awk '{ print $3}'); do sudo umount "$i"; done
     delete_folder_if_exists $OS_PATH/openshift.local.clusterup
   ;;
   # Runs all of the various clean commands
@@ -168,14 +178,19 @@ case "$1" in
   testextended|te)
     message "INFO" "Running Extended Test"
     delete_if_exists _output/local/bin/linux/amd64/extended.test
-    FOCUS="$2" test/extended/core.sh
+    # FOCUS="$2" test/extended/core.sh
+    KUBECONFIG=/home/${USER}/go/src/github.com/openshift/origin/openshift.local.clusterup/openshift-controller-manager/admin.kubeconfig FOCUS=$2 TEST_ONLY=true test/extended/core.sh
   ;;
-  # Start (or restart) Origin
-  # Does a bunch of setup if you are starting with a clean environment
-  start|restart|reload)
-    $0 stop
-    $0 build
+  # Start Origin
+  start)
     $OS_BIN_PATH/oc cluster up --tag=latest --server-loglevel=5
+  ;;
+  # Restart (or reload) Origin
+  restart|reload)
+    $0 stop
+    $0 cleanconfig
+    $0 build
+    $0 start
   ;;
   # Stops Origin
   stop)
@@ -199,7 +214,7 @@ case "$1" in
   build-images|bi)
       message "INFO" "Building images"
       $0 build
-      python2 hack/build-local-images.py
+      python hack/build-local-images.py $2
   ;;
   # Copies the source-to-image source code into the correct vendor directory for testing
   copys2i)
@@ -219,7 +234,70 @@ case "$1" in
     PERMISSIVE_GO=y hack/verify-gofmt.sh | xargs -n 1 gofmt -s -w
 
   ;;
-    # Runs the oc completion and oc adm completion commands and
+  # Setup the router
+  router)
+    message "INFO" "Setting up router"
+    run_as_admin "oc adm policy add-scc-to-user hostnetwork -z router"
+    run_as_admin "oc adm router"
+    run_as_admin "oc rollout latest dc/router"
+
+  ;;
+  # Setup the registry
+  registry)
+    message "INFO" "Setting up registry"
+    run_as_admin "oc adm registry"
+
+  ;;
+  # Setup the example imagestreams and templates
+  ist)
+    message "INFO" "Setting up OpenShift"
+    if [[ ! -z $2 ]]; then
+      if ! [[ $2 =~ ^(centos|rhel)$ ]]; then
+        message "ERROR" "Option \"$2\" not found, must be one of [centos, rhel]"
+        exit 1
+      else
+        OS=$2
+      fi
+    else
+      OS=centos
+    fi
+
+    message "INFO" "Loading ${OS} image streams from examples directory"
+    run_as_admin "oc create -f $OS_TEMPLATE_PATH/image-streams/image-streams-${OS}7.json -n openshift"
+
+    message "INFO" "Loading quickstarts and database templates from examples directory"
+    LOCATIONS=(
+              "jenkins"
+              "db-templates"
+              "quickstarts"
+    )
+    for l in ${LOCATIONS[@]}
+    do
+      for f in $OS_TEMPLATE_PATH/${l}/*.json
+      do
+        run_as_admin "oc create -f ${f} -n openshift"
+      done
+    done
+  ;;
+  # Setup the webconsole
+  # webconsole)
+  #   message "INFO" "Setting up webconsole"
+  #   run_as_admin "oc adm policy add-cluster-role-to-user cluster-admin admin"
+  #   oc login -u admin
+  #   source ./contrib/oc-environment.sh
+  #   ./bin/bridge
+
+
+  # ;;
+  # Do some basic setup for Origin, must have run start first
+  # Sets up the registry, router, and loads the example templates
+  # and imagestreams
+  setup)
+    $0 ist
+    $0 registry
+    $0 router
+  ;;
+  # Runs the oc completion and oc adm completion commands and
   # copies the files into your home directory.
   # You will still need to source these files in your .bash_profile
   # or similar to get completion on the command line
