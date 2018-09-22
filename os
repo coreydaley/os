@@ -50,8 +50,11 @@ else
 fi
 
 # Define some standard file and folder locations
-OS_OUTPUT_PATH=$OS_PATH/_output
+OS_OUTPUT_PATH=$OS_GO_DIR/_output
+OS_TEMPLATE_PATH=$OS_GO_DIR/examples
 OS_BIN_PATH=$OS_OUTPUT_PATH/local/bin/linux/amd64
+OS_CONFIG_PATH=$OS_GO_DIR/openshift.local.clusterup
+OS_KUBE_CONFIG_PATH=$OS_CONFIG_PATH/kube-apiserver/admin.kubeconfig
 
 # Delete file if it exists
 function delete_if_exists() {
@@ -67,6 +70,12 @@ function delete_folder_if_exists() {
     message "INFO" "Deleting $1"
     sudo rm -rf $1
   fi
+}
+
+# Run command as system:admin
+function run_as_admin() {
+  message "INFO" "Running command as system:admin: ${1}"
+  $OS_BIN_PATH/${1} --config=$OS_KUBE_CONFIG_PATH
 }
 
 case "$1" in
@@ -224,6 +233,67 @@ case "$1" in
     message "INFO" "Running gofmt"
     PERMISSIVE_GO=y hack/verify-gofmt.sh | xargs -n 1 gofmt -s -w
 
+  ;;
+  # Setup the router
+  router)
+    message "INFO" "Setting up router"
+    run_as_admin "oc adm policy add-scc-to-user hostnetwork -z router"
+    run_as_admin "oc adm router"
+    run_as_admin "oc rollout latest dc/router"
+
+  ;;
+  # Setup the registry
+  registry)
+    message "INFO" "Setting up registry"
+    run_as_admin "oc adm registry"
+
+  ;;
+  # Setup the webconsole
+  # webconsole)
+  #   message "INFO" "Setting up webconsole"
+  #   run_as_admin "oc adm policy add-cluster-role-to-user cluster-admin admin"
+  #   oc login -u admin
+  #   source ./contrib/oc-environment.sh
+  #   ./bin/bridge
+
+
+  # ;;
+  # Do some basic setup for Origin, must have run start first
+  # Sets up the registry, router, web console, and loads the default templates
+  # Also creates some persistent volumes and a user/project based
+  # on your user on your workstation
+  setup)
+    message "INFO" "Setting up OpenShift"
+    if [[ ! -z $2 ]]; then
+      if ! [[ $2 =~ ^(centos|rhel)$ ]]; then
+        message "ERROR" "Option \"$2\" not found, must be one of [centos, rhel]"
+        exit 1
+      else
+        OS=$2
+      fi
+    else
+      OS=centos
+    fi
+
+    $0 registry
+    $0 router
+
+    message "INFO" "Loading ${OS} image streams from examples directory"
+    run_as_admin "oc create -f $OS_TEMPLATE_PATH/image-streams/image-streams-${OS}7.json -n openshift"
+
+    message "INFO" "Loading quickstarts and database templates from examples directory"
+    LOCATIONS=(
+              "jenkins"
+              "db-templates"
+              "quickstarts"
+    )
+    for l in ${LOCATIONS[@]}
+    do
+      for f in $OS_TEMPLATE_PATH/${l}/*.json
+      do
+        run_as_admin "oc create -f ${f} -n openshift"
+      done
+    done
   ;;
     # Runs the oc completion and oc adm completion commands and
   # copies the files into your home directory.
