@@ -42,7 +42,6 @@ function message() {
 # Make sure that Origin is checked out into a valid location
 OS_GO_DIR=$GOPATH/src/github.com/openshift/origin
 if [ -e $OS_GO_DIR ]; then
-  message "INFO" "Using $OS_GO_DIR"
   OS_PATH=$OS_GO_DIR
 else
   message "ERROR" "It looks like $OS_GO_DIR doesn't exist."
@@ -117,25 +116,28 @@ case "$1" in
   # and cleans up used space
   cleandocker|cd)
     message "INFO" "Cleaning Docker"
-    if [ $(docker ps -q | wc -l) -gt 0 ]; then
-      docker stop $(docker ps -q)
+    $0 stop
+    if [ $(docker ps -a | grep openshift | wc -l) -gt 0 ]; then
+      message "INFO" "Removing OpenShift containers"
+      docker ps -a | grep openshift | awk '{print $1}' | xargs docker rm -vf
     fi
-    if [ $(docker ps -aq | wc -l) -gt 0 ]; then
-      docker rm  -vf $(docker ps -a -q)
+    if [ $(docker images | grep openshift | wc -l) -gt 0 ]; then
+      message "INFO" "Removing OpenShift images"
+      docker images | grep openshift | awk '{print $3}' | xargs docker rmi -f
     fi
-    if [ $(docker images -q | wc -l) -gt 0 ]; then
-      docker rmi -f  $(docker images -q)
-    fi
-    docker volume rm $(docker volume ls -qf dangling=true)
+    message "INFO" "Pruning unused volumes"
     docker volume prune -f
-    docker system prune -a -f
+    message "INFO" "Pruning unused data"
+    docker system prune -f
   ;;
   # Removes the configuration files generated when starting origin
   cleanconfig|cc)
     $0 stop
     message "INFO" "Cleaning Cluster Up Configuration"
+    message "INFO" "Unmounting volumes"
     for i in $(mount | grep openshift | awk '{ print $3}'); do sudo umount "$i"; done
-    delete_folder_if_exists $OS_PATH/openshift.local.clusterup
+    message "INFO" "Removing ${OS_CONFIG_PATH}"
+    delete_folder_if_exists $OS_CONFIG_PATH
   ;;
   # Runs all of the various clean commands
   cleanall|ca)
@@ -232,7 +234,6 @@ case "$1" in
   gofmt|g)
     message "INFO" "Running gofmt"
     PERMISSIVE_GO=y hack/verify-gofmt.sh | xargs -n 1 gofmt -s -w
-
   ;;
   # Setup the router
   router)
@@ -240,13 +241,11 @@ case "$1" in
     run_as_admin "oc adm policy add-scc-to-user hostnetwork -z router"
     run_as_admin "oc adm router"
     run_as_admin "oc rollout latest dc/router"
-
   ;;
   # Setup the registry
   registry)
     message "INFO" "Setting up registry"
     run_as_admin "oc adm registry"
-
   ;;
   # Setup the example imagestreams and templates
   ist)
@@ -286,8 +285,6 @@ case "$1" in
   #   oc login -u admin
   #   source ./contrib/oc-environment.sh
   #   ./bin/bridge
-
-
   # ;;
   # Do some basic setup for Origin, must have run start first
   # Sets up the registry, router, and loads the example templates
