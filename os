@@ -42,6 +42,7 @@ function message() {
 # Make sure that Origin is checked out into a valid location
 OS_GO_DIR=$GOPATH/src/github.com/openshift/origin
 if [ -e $OS_GO_DIR ]; then
+  message "INFO" "Using $OS_GO_DIR"
   OS_PATH=$OS_GO_DIR
 else
   message "ERROR" "It looks like $OS_GO_DIR doesn't exist."
@@ -52,8 +53,13 @@ fi
 OS_OUTPUT_PATH=$OS_GO_DIR/_output
 OS_TEMPLATE_PATH=$OS_GO_DIR/examples
 OS_BIN_PATH=$OS_OUTPUT_PATH/local/bin/linux/amd64
-OS_CONFIG_PATH=$OS_GO_DIR/openshift.local.clusterup
+OS_CONFIG_PATH=$OS_GO_DIR/_output/local/server
 OS_KUBE_CONFIG_PATH=$OS_CONFIG_PATH/kube-apiserver/admin.kubeconfig
+
+OS_MASTER_CONFIG_PATH=$OS_CONFIG_PATH/master
+OS_NODE_CONFIG_PATH=$OS_CONFIG_PATH/node
+OS_VOLUME_DIR=$OS_NODE_CONFIG_PATH/volumes
+mkdir -p ${OS_MASTER_CONFIG_PATH} ${OS_NODE_CONFIG_PATH} ${OS_VOLUME_DIR}
 
 # Delete file if it exists
 function delete_if_exists() {
@@ -116,28 +122,27 @@ case "$1" in
   # and cleans up used space
   cleandocker|cd)
     message "INFO" "Cleaning Docker"
-    $0 stop
-    if [ $(docker ps -a | grep openshift | wc -l) -gt 0 ]; then
-      message "INFO" "Removing OpenShift containers"
-      docker ps -a | grep openshift | awk '{print $1}' | xargs docker rm -vf
+    if [ $(docker ps -q | wc -l) -gt 0 ]; then
+      docker stop $(docker ps -q)
     fi
-    if [ $(docker images | grep openshift | wc -l) -gt 0 ]; then
-      message "INFO" "Removing OpenShift images"
-      docker images | grep openshift | awk '{print $3}' | xargs docker rmi -f
+    if [ $(docker ps -aq | wc -l) -gt 0 ]; then
+      docker rm  -vf $(docker ps -a -q)
     fi
-    message "INFO" "Pruning unused volumes"
+    if [ $(docker images -q | wc -l) -gt 0 ]; then
+      docker rmi -f  $(docker images -q)
+    fi
+    docker volume rm $(docker volume ls -qf dangling=true)
     docker volume prune -f
-    message "INFO" "Pruning unused data"
-    docker system prune -f
+    docker system prune -a -f
   ;;
   # Removes the configuration files generated when starting origin
   cleanconfig|cc)
     $0 stop
     message "INFO" "Cleaning Cluster Up Configuration"
-    message "INFO" "Unmounting volumes"
     for i in $(mount | grep openshift | awk '{ print $3}'); do sudo umount "$i"; done
-    message "INFO" "Removing ${OS_CONFIG_PATH}"
-    delete_folder_if_exists $OS_CONFIG_PATH
+    delete_folder_if_exists $OS_MASTER_CONFIG_PATH
+    delete_folder_if_exists $OS_NODE_CONFIG_PATH
+    delete_folder_if_exists $OS_VOLUME_PATH
   ;;
   # Runs all of the various clean commands
   cleanall|ca)
@@ -185,7 +190,30 @@ case "$1" in
   ;;
   # Start Origin
   start)
-    $OS_BIN_PATH/oc cluster up --tag=latest --server-loglevel=5
+    #$OS_BIN_PATH/oc cluster up --tag=latest --server-loglevel=5
+
+    host=$( openshift start master --print-ip )
+    openshift start master \
+      --etcd-dir=${OS_MASTER_CONFIG_PATH}/etcd \
+      --write-config=${OS_MASTER_CONFIG_PATH}
+    oc adm create-node-config \
+      --node-dir="${OS_NODE_CONFIG_PATH}" \
+      --node="${host}" \
+      --master="https://${host}:8443" \
+      --dns-ip="172.30.0.1" \
+      --hostnames="${host}" \
+      --network-plugin="" \
+      --volume-dir="${OS_VOLUME_DIR}" \
+      --node-client-certificate-authority="${OS_MASTER_CONFIG_PATH}/ca.crt" \
+      --certificate-authority="${OS_MASTER_CONFIG_PATH}/ca.crt" \
+      --signer-cert="${OS_MASTER_CONFIG_PATH}/ca.crt" \
+      --signer-key="${OS_MASTER_CONFIG_PATH}/ca.key" \
+      --signer-serial="${OS_MASTER_CONFIG_PATH}/ca.serial.txt"
+
+    flags=$( openshift-node-config --config=${OS_NODE_CONFIG_PATH}/node-config.yaml )
+
+    sudo hyperkube kubelet ${flags} &> $OS_MASTER_CONFIG_PATH/kubelet.log
+    sudo ${OS_BIN_PATH}/openshift start master --config=${OS_MASTER_CONFIG_PATH}/master-config.yaml &> $OS_MASTER_CONFIG_PATH/master.log &
   ;;
   # Restart (or reload) Origin
   restart|reload)
@@ -197,20 +225,16 @@ case "$1" in
   # Stops Origin
   stop)
     message "INFO" "Stopping OpenShift"
-    $OS_BIN_PATH/oc cluster down
+    #$OS_BIN_PATH/oc cluster down
+    sudo pkill -x openshift
   ;;
   # Symlinks the Origin binaries into ~/bin
   symlink-binaries|sb)
     message "INFO" "Symlinking OpenShift binaries"
-    BINARIES=(
-              "oc"
-              "openshift"
-    )
-    for b in ${BINARIES[@]}
-    do
-      message "INFO" "Symlinking ${OS_BIN_PATH}/${b} to ~/bin/${b}"
-      ln -sf ${OS_BIN_PATH}/${b} ~/bin/${b}
-    done
+    for f in ${OS_BIN_PATH}/*
+      do
+        ln -sf ${f} ~/bin/$(basename ${f})
+      done
   ;;
   # Build images based on the currently checked out code and push them to the registry
   build-images|bi)
@@ -234,6 +258,7 @@ case "$1" in
   gofmt|g)
     message "INFO" "Running gofmt"
     PERMISSIVE_GO=y hack/verify-gofmt.sh | xargs -n 1 gofmt -s -w
+
   ;;
   # Setup the router
   router)
@@ -241,11 +266,13 @@ case "$1" in
     run_as_admin "oc adm policy add-scc-to-user hostnetwork -z router"
     run_as_admin "oc adm router"
     run_as_admin "oc rollout latest dc/router"
+
   ;;
   # Setup the registry
   registry)
     message "INFO" "Setting up registry"
     run_as_admin "oc adm registry"
+
   ;;
   # Setup the example imagestreams and templates
   ist)
@@ -261,23 +288,6 @@ case "$1" in
       OS=centos
     fi
 
-<<<<<<< HEAD
-    message "INFO" "Setting up router"
-    run_as_admin "oc adm policy add-scc-to-user hostnetwork -z router"
-    run_as_admin "oc adm router"
-    run_as_admin "oc rollout latest dc/router"
-
-    message "INFO" "Setting up registry"
-    run_as_admin "oc adm registry -n default"
-
-    message "INFO" "Setting up webconsole"
-    run_as_admin "oc create namespace openshift-web-console"
-    run_as_admin "oc project openshift-web-console"
-    oc login -u system:admin
-    oc process -f install/origin-web-console/console-template.yaml -p "API_SERVER_CONFIG=$(cat ${CANONICAL_DIR}/files/console-config.yaml)" | oc apply -n openshift-web-console -f -
-
-=======
->>>>>>> 16c9886c39f71e2aa4f06a02c882ae3ceac464a6
     message "INFO" "Loading ${OS} image streams from examples directory"
     run_as_admin "oc create -f $OS_TEMPLATE_PATH/image-streams/image-streams-${OS}7.json -n openshift"
 
@@ -302,6 +312,8 @@ case "$1" in
   #   oc login -u admin
   #   source ./contrib/oc-environment.sh
   #   ./bin/bridge
+
+
   # ;;
   # Do some basic setup for Origin, must have run start first
   # Sets up the registry, router, and loads the example templates
