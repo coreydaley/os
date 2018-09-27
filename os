@@ -212,8 +212,8 @@ case "$1" in
 
     flags=$( openshift-node-config --config=${OS_NODE_CONFIG_PATH}/node-config.yaml )
 
-    sudo hyperkube kubelet ${flags} &> $OS_MASTER_CONFIG_PATH/kubelet.log
-    sudo ${OS_BIN_PATH}/openshift start master --config=${OS_MASTER_CONFIG_PATH}/master-config.yaml &> $OS_MASTER_CONFIG_PATH/master.log &
+    sudo ${OS_BIN_PATH}/hyperkube kubelet ${flags} &> $OS_NODE_CONFIG_PATH/kubelet.log &
+    sudo ${OS_BIN_PATH}/openshift start master --config=${OS_MASTER_CONFIG_PATH}/master-config.yaml --latest-images=true &> $OS_MASTER_CONFIG_PATH/master.log &
   ;;
   # Restart (or reload) Origin
   restart|reload)
@@ -227,6 +227,7 @@ case "$1" in
     message "INFO" "Stopping OpenShift"
     #$OS_BIN_PATH/oc cluster down
     sudo pkill -x openshift
+    sudo pkill -x hyperkube
   ;;
   # Symlinks the Origin binaries into ~/bin
   symlink-binaries|sb)
