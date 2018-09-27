@@ -32,15 +32,6 @@
 # package structure and that $GOPATH is set correctly
 #
 
-# https://stackoverflow.com/questions/59895/getting-the-source-directory-of-a-bash-script-from-within
-SOURCE="${BASH_SOURCE[0]}"
-while [ -h "$SOURCE" ]; do
-  DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
-  SOURCE="$(readlink "$SOURCE")"
-  [[ $SOURCE != /* ]] && SOURCE="$DIR/$SOURCE"
-done
-CANONICAL_DIR="$( cd -P "$( dirname "$SOURCE" )" && pwd )"
-
 # Displays a formatted message to the console
 # Example: message "LEVEL" "This is a message"
 # Output: [OS] [LEVEL] This is a message
@@ -51,7 +42,6 @@ function message() {
 # Make sure that Origin is checked out into a valid location
 OS_GO_DIR=$GOPATH/src/github.com/openshift/origin
 if [ -e $OS_GO_DIR ]; then
-  message "INFO" "Using $OS_GO_DIR"
   OS_PATH=$OS_GO_DIR
 else
   message "ERROR" "It looks like $OS_GO_DIR doesn't exist."
@@ -59,40 +49,11 @@ else
 fi
 
 # Define some standard file and folder locations
-OS_OUTPUT_PATH=$OS_PATH/_output
-OS_TEMPLATE_PATH=$OS_PATH/examples
+OS_OUTPUT_PATH=$OS_GO_DIR/_output
+OS_TEMPLATE_PATH=$OS_GO_DIR/examples
 OS_BIN_PATH=$OS_OUTPUT_PATH/local/bin/linux/amd64
-OS_CONFIG_PATH=$OS_BIN_PATH/openshift.local.config
-OS_KUBE_CONFIG_PATH=$OS_CONFIG_PATH/master/admin.kubeconfig
-KUBE_CONFIG_DIR=$HOME/.kube
-KUBE_CONFIG_PATH=$KUBE_CONFIG_DIR/config
-
-
-# Make sure that the ~/.kube directory exists
-if [ ! -d $KUBE_CONFIG_DIR ]; then
-  message "INFO" "Creating $KUBE_CONFIG_DIR"
-  mkdir $KUBE_CONFIG_DIR
-fi
-
-# Make sure that these files exist
-# in the correct location
-FILES=(
-"volumes.yaml"
-"console-config.yaml"
-)
-missing_files=false
-for FILE in ${FILES[@]}
-do
-  if [ ! -e ${CANONICAL_DIR}/files/${FILE} ]; then
-    missing_files=true
-    message "ERROR" "Missing ${CANONICAL_DIR}/files/${FILE}"
-  fi
-
-done
-if $missing_files; then
-  message "" "Create the above missing files and try running the command again."
-  exit
-fi
+OS_CONFIG_PATH=$OS_GO_DIR/openshift.local.clusterup
+OS_KUBE_CONFIG_PATH=$OS_CONFIG_PATH/kube-apiserver/admin.kubeconfig
 
 # Delete file if it exists
 function delete_if_exists() {
@@ -106,7 +67,7 @@ function delete_if_exists() {
 function delete_folder_if_exists() {
   if [ -e $1 ]; then
     message "INFO" "Deleting $1"
-    rm -r $1
+    sudo rm -rf $1
   fi
 }
 
@@ -132,6 +93,7 @@ case "$1" in
   build)
     message "INFO" "Running make build"
     make build
+    $0 symlink-binaries
   ;;
   # Runs the make verify command
   verify)
@@ -148,33 +110,34 @@ case "$1" in
   clean)
     $0 stop
     message "INFO" "Cleaning OpenShift"
-    rm -rf $KUBE_CONFIG_DIR/*
-    sudo make clean
+    make clean
   ;;
   # Removes all containers, volumes, and images from docker
   # and cleans up used space
   cleandocker|cd)
     message "INFO" "Cleaning Docker"
-    if [ $(docker ps -q | wc -l) -gt 0 ]; then
-      docker stop $(docker ps -q)
+    $0 stop
+    if [ $(docker ps -a | grep openshift | wc -l) -gt 0 ]; then
+      message "INFO" "Removing OpenShift containers"
+      docker ps -a | grep openshift | awk '{print $1}' | xargs docker rm -vf
     fi
-    if [ $(docker ps -aq | wc -l) -gt 0 ]; then
-      docker rm  -vf $(docker ps -a -q)
+    if [ $(docker images | grep openshift | wc -l) -gt 0 ]; then
+      message "INFO" "Removing OpenShift images"
+      docker images | grep openshift | awk '{print $3}' | xargs docker rmi -f
     fi
-    if [ $(docker images -q | wc -l) -gt 0 ]; then
-      docker rmi -f  $(docker images -q)
-    fi
-    docker volume rm $(docker volume ls -qf dangling=true)
+    message "INFO" "Pruning unused volumes"
     docker volume prune -f
-    docker system prune -a -f
+    message "INFO" "Pruning unused data"
+    docker system prune -f
   ;;
   # Removes the configuration files generated when starting origin
   cleanconfig|cc)
     $0 stop
-    message "INFO" "Cleaning OpenShift Configuration"
-    delete_folder_if_exists $OS_CONFIG_PATH/openshift.local.config
-    delete_folder_if_exists $OS_CONFIG_PATH/openshift.local.etcd
-    delete_folder_if_exists $OS_CONFIG_PATH/openshift.local.volumes
+    message "INFO" "Cleaning Cluster Up Configuration"
+    message "INFO" "Unmounting volumes"
+    for i in $(mount | grep openshift | awk '{ print $3}'); do sudo umount "$i"; done
+    message "INFO" "Removing ${OS_CONFIG_PATH}"
+    delete_folder_if_exists $OS_CONFIG_PATH
   ;;
   # Runs all of the various clean commands
   cleanall|ca)
@@ -217,35 +180,24 @@ case "$1" in
   testextended|te)
     message "INFO" "Running Extended Test"
     delete_if_exists _output/local/bin/linux/amd64/extended.test
-    FOCUS="$2" test/extended/core.sh
+    # FOCUS="$2" test/extended/core.sh
+    KUBECONFIG=/home/${USER}/go/src/github.com/openshift/origin/openshift.local.clusterup/openshift-controller-manager/admin.kubeconfig FOCUS=$2 TEST_ONLY=true test/extended/core.sh
   ;;
-  # Start (or restart) Origin
-  # Does a bunch of setup if you are starting with a clean environment
-  start|restart|reload)
+  # Start Origin
+  start)
+    $OS_BIN_PATH/oc cluster up --tag=latest --server-loglevel=5
+  ;;
+  # Restart (or reload) Origin
+  restart|reload)
     $0 stop
+    $0 cleanconfig
     $0 build
-    pushd $OS_BIN_PATH >> /dev/null
-    if [ ! -f $OS_CONFIG_PATH/master/master-config.yaml ]; then
-      message "INFO" "Creating master and node configuration directories"
-      sudo $OS_BIN_PATH/openshift start --write-config=$OS_CONFIG_PATH --latest-images=true
-      sudo sed -i -e 's/router.default.svc.cluster.local/127.0.0.1.nip.io/' $OS_CONFIG_PATH/master/master-config.yaml
-      mkdir -p $OS_CONFIG_PATH
-      sudo chmod +r $OS_KUBE_CONFIG_PATH
-      sudo cp $OS_KUBE_CONFIG_PATH $KUBE_CONFIG_PATH
-      sudo chown $USER:$USER $OS_KUBE_CONFIG_PATH
-      sudo chown $USER:$USER $KUBE_CONFIG_PATH
-    fi
-    message "INFO" "Starting OpenShift"
-    sudo $OS_BIN_PATH/openshift start --loglevel=5 --master-config=$OS_CONFIG_PATH/master/master-config.yaml --node-config=$OS_CONFIG_PATH/node-`hostname`/node-config.yaml > $OS_OUTPUT_PATH/openshift-dev.log  2>&1 &
-    popd >> /dev/null
-    $0 symlink-binaries
+    $0 start
   ;;
   # Stops Origin
   stop)
     message "INFO" "Stopping OpenShift"
-    sudo pkill -x openshift
-    docker ps | awk 'index($NF,"k8s_")==1 { print $1 }' | xargs -l -r docker stop
-    mount | grep "openshift.local.volumes" | awk '{ print $3}' | xargs -l -r sudo umount
+    $OS_BIN_PATH/oc cluster down
   ;;
   # Symlinks the Origin binaries into ~/bin
   symlink-binaries|sb)
@@ -264,85 +216,7 @@ case "$1" in
   build-images|bi)
       message "INFO" "Building images"
       $0 build
-      hack/build-local-images.py
-  ;;
-  # Do some basic setup for Origin, must have run start first
-  # Sets up the registry, router, web console, and loads the default templates
-  # Also creates some persistent volumes and a user/project based
-  # on your user on your workstation
-  setup)
-    message "INFO" "Setting up OpenShift"
-    if [[ ! -z $2 ]]; then
-      if ! [[ $2 =~ ^(centos|rhel)$ ]]; then
-        message "ERROR" "Option \"$2\" not found, must be one of [centos, rhel]"
-        exit 1
-      else
-        OS=$2
-      fi
-    else
-      OS=centos
-    fi
-
-    message "INFO" "Setting up router"
-    run_as_admin "oc adm policy add-scc-to-user hostnetwork -z router"
-    run_as_admin "oc adm router"
-    run_as_admin "oc rollout latest dc/router"
-
-    message "INFO" "Setting up registry"
-    run_as_admin "oc adm registry -n default"
-
-    message "INFO" "Setting up webconsole"
-    run_as_admin "oc create namespace openshift-web-console"
-    run_as_admin "oc project openshift-web-console"
-    oc login -u system:admin
-    oc process -f install/origin-web-console/console-template.yaml -p "API_SERVER_CONFIG=$(cat ${CANONICAL_DIR}/files/console-config.yaml)" | oc apply -n openshift-web-console -f -
-
-    message "INFO" "Loading ${OS} image streams from examples directory"
-    run_as_admin "oc create -f $OS_TEMPLATE_PATH/image-streams/image-streams-${OS}7.json -n openshift"
-
-    message "INFO" "Loading quickstarts and database templates from examples directory"
-    LOCATIONS=(
-              "jenkins"
-              "db-templates"
-              "quickstarts"
-    )
-    for l in ${LOCATIONS[@]}
-    do
-      for f in $OS_TEMPLATE_PATH/${l}/*.json
-      do
-        run_as_admin "oc create -f ${f} -n openshift"
-      done
-    done
-
-    $0 create-volumes
-    $0 create-user ${USER}
-  ;;
-  # Creates a user in Origin with a matching namespace
-  # If no username is passed, a user and namespace
-  # based on your workstation username is created
-  create-user|cu)
-    user=$2
-    if [[ ! -z $3 ]]; then
-      namespace=$3
-    else
-      namespace=$user
-    fi
-    message "INFO" "Creating user ${user}"
-    oc login -u ${user} -p ${user}
-
-    message "INFO" "Creating namespace ${namespace}"
-    oc new-project ${namespace}
-  ;;
-  # Creates persistent volumes based on the localvolumes.yaml file
-  create-volumes|cv)
-    message "INFO" "Creating persistent volumes"
-    sudo rm -rf /tmp/volume*
-    mkdir /tmp/volume1
-    mkdir /tmp/volume2
-    mkdir /tmp/volume3
-    chmod a+rw /tmp/volume*
-    chcon -t svirt_sandbox_file_t /tmp/volume*
-    $OS_BIN_PATH/oc create -f ${CANONICAL_DIR}/files/volumes.yaml
+      python hack/build-local-images.py $2
   ;;
   # Copies the source-to-image source code into the correct vendor directory for testing
   copys2i)
@@ -359,27 +233,83 @@ case "$1" in
   # Runs the gofmt script on the origin code and fixes any issues
   gofmt|g)
     message "INFO" "Running gofmt"
-    PERMISSIVE_GO=y hack/verify-gofmt.sh
-    # PERMISSIVE_GO=y hack/verify-gofmt.sh | xargs -n 1 gofmt -s -w
-
+    PERMISSIVE_GO=y hack/verify-gofmt.sh | xargs -n 1 gofmt -s -w
   ;;
-  # Logs you into Origin
-  # If no username is passed, you are logged in as your workstation user
-  # If sys is passed as the username, you are logged in as system:admin
-  login|l)
-    if [ -z $2 ]; then
-      message "INFO" "Logging in as ${USER}"
-      oc login --username=${USER} --password=${USER}
-      oc project ${USER}
-    elif [ $2 == "sys" ]; then
-      message "INFO" "Logging in as system:admin"
-      oc login -u system:admin
-      oc project default
+  # Setup the router
+  router)
+    message "INFO" "Setting up router"
+    run_as_admin "oc adm policy add-scc-to-user hostnetwork -z router"
+    run_as_admin "oc adm router"
+    run_as_admin "oc rollout latest dc/router"
+  ;;
+  # Setup the registry
+  registry)
+    message "INFO" "Setting up registry"
+    run_as_admin "oc adm registry"
+  ;;
+  # Setup the example imagestreams and templates
+  ist)
+    message "INFO" "Setting up OpenShift"
+    if [[ ! -z $2 ]]; then
+      if ! [[ $2 =~ ^(centos|rhel)$ ]]; then
+        message "ERROR" "Option \"$2\" not found, must be one of [centos, rhel]"
+        exit 1
+      else
+        OS=$2
+      fi
     else
-      message "INFO" "Logging in as $2"
-      oc login --username=$2 --password=$2
-      oc new-project $2
+      OS=centos
     fi
+
+<<<<<<< HEAD
+    message "INFO" "Setting up router"
+    run_as_admin "oc adm policy add-scc-to-user hostnetwork -z router"
+    run_as_admin "oc adm router"
+    run_as_admin "oc rollout latest dc/router"
+
+    message "INFO" "Setting up registry"
+    run_as_admin "oc adm registry -n default"
+
+    message "INFO" "Setting up webconsole"
+    run_as_admin "oc create namespace openshift-web-console"
+    run_as_admin "oc project openshift-web-console"
+    oc login -u system:admin
+    oc process -f install/origin-web-console/console-template.yaml -p "API_SERVER_CONFIG=$(cat ${CANONICAL_DIR}/files/console-config.yaml)" | oc apply -n openshift-web-console -f -
+
+=======
+>>>>>>> 16c9886c39f71e2aa4f06a02c882ae3ceac464a6
+    message "INFO" "Loading ${OS} image streams from examples directory"
+    run_as_admin "oc create -f $OS_TEMPLATE_PATH/image-streams/image-streams-${OS}7.json -n openshift"
+
+    message "INFO" "Loading quickstarts and database templates from examples directory"
+    LOCATIONS=(
+              "jenkins"
+              "db-templates"
+              "quickstarts"
+    )
+    for l in ${LOCATIONS[@]}
+    do
+      for f in $OS_TEMPLATE_PATH/${l}/*.json
+      do
+        run_as_admin "oc create -f ${f} -n openshift"
+      done
+    done
+  ;;
+  # Setup the webconsole
+  # webconsole)
+  #   message "INFO" "Setting up webconsole"
+  #   run_as_admin "oc adm policy add-cluster-role-to-user cluster-admin admin"
+  #   oc login -u admin
+  #   source ./contrib/oc-environment.sh
+  #   ./bin/bridge
+  # ;;
+  # Do some basic setup for Origin, must have run start first
+  # Sets up the registry, router, and loads the example templates
+  # and imagestreams
+  setup)
+    $0 ist
+    $0 registry
+    $0 router
   ;;
   # Runs the oc completion and oc adm completion commands and
   # copies the files into your home directory.
