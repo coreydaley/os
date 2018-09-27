@@ -54,7 +54,7 @@ OS_OUTPUT_PATH=$OS_GO_DIR/_output
 OS_TEMPLATE_PATH=$OS_GO_DIR/examples
 OS_BIN_PATH=$OS_OUTPUT_PATH/local/bin/linux/amd64
 OS_CONFIG_PATH=$OS_GO_DIR/_output/local/server
-OS_KUBE_CONFIG_PATH=$OS_CONFIG_PATH/kube-apiserver/admin.kubeconfig
+OS_KUBE_CONFIG_PATH=$OS_CONFIG_PATH/master/admin.kubeconfig
 
 OS_MASTER_CONFIG_PATH=$OS_CONFIG_PATH/master
 OS_NODE_CONFIG_PATH=$OS_CONFIG_PATH/node
