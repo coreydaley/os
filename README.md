@@ -7,7 +7,12 @@
 This command line utility was created to make setting up and working
 with a development environment for [OpenShift Origin](https://openshift.org) faster and simpler.
 
-### os
+### Using Install Configs
+You can create install configs using the `openshift-install create install-config` command  
+and store them in `$HOME/.openshift/configs` and use them with this script using the `os --cloudconfig <type>` where `<type>` is one of aws, gce, or azure.  
+You will need to name your install configs like `install-config-<type>.yaml` for this script to pick them up.
+
+## os
 It is recommended that you symlink this file into your `~/bin` directory
 so that you can run it without having to specify the path.  You will also
 need to make sure that `~/bin` is on your `PATH`.
