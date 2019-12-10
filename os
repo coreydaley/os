@@ -2,7 +2,7 @@
 
 usage() {
 cat <<EOF
-  Usage: launch-dev-cluster.sh [OPTIONS]...
+  Usage: os [OPTIONS]...
   Download the OpenShift client and installer and launch a cluster.
 
   Optional Arguments:
@@ -29,6 +29,9 @@ cat <<EOF
 
   --releaseversion   Version to use of the OpenShift client and installer.
                      Defaults to 4.2.9
+
+  --tools-only       Download and install the OpenShift client and installer only
+                     and don't remove a previous cluster or create a new one.
 
   -h, --help         Display this help.
 
@@ -67,7 +70,10 @@ while [ "$1" != "" ]; do
                                 ;;  
         --releaseversion )      shift
                                 releaseVersion=$1
-                                ;;                              
+                                ;;   
+        --tools-only )          shift
+                                toolsOnly=true
+                                ;;                                                           
         -h | --help )           usage
                                 exit
                                 ;;
@@ -111,7 +117,7 @@ if [ ! -z "$cloudConfig" ]; then
 fi
 
 message ""
-message "---------- Creating Cluster ----------"
+message "---------- Downloading and Installing Client and Installer ----------"
 
 # setup the urls to download the client and installer from when using curl or wget
 baseURL=https://mirror.openshift.com/pub/openshift-v4/clients/ocp/${releaseVersion}
@@ -177,34 +183,38 @@ done
 
 popd > /dev/null
 
-if [ -f "${clusterDir}/metadata.json" ]; then
-  message "Destroying previous cluster at ${clusterDir}"
-  openshift-install destroy cluster --dir ${clusterDir}
-  message "Removing ${clusterDir}"
-  rm -rf ${clusterDir}
+
+if [ -z "${toolsOnly}" ]; then
+
+  if [ -f "${clusterDir}/metadata.json" ]; then
+    message "Destroying previous cluster at ${clusterDir}"
+    openshift-install destroy cluster --dir ${clusterDir}
+    message "Removing ${clusterDir}"
+    rm -rf ${clusterDir}
+  fi
+
+  message "Creating ${clusterDir}"
+  mkdir -p $clusterDir
+
+  pushd $clusterDir > /dev/null
+
+  if [ ! -z "${cloudConfig}" ]; then
+    message "Copying ${cloudConfig} from ${cloudConfigsDir}"
+    cp ${cloudConfigsDir}/install-config-${cloudConfig}.yaml ${clusterDir}/install-config.yaml
+  else
+    message "============ PULL SECRET ============"
+    message " "
+    cat $pullSecret | tr -d '\n' | tr -d ' '
+    message "\n"
+    message "====================================="
+  fi
+
+  message "Creating new cluster at ${releaseVersion}"
+
+  openshift-install create cluster --dir ${clusterDir}
+
+  message ""
+  message "Please run 'export KUBECONFIG=$clusterDir/auth/kubeconfig' to connect to your cluster."
+
+  popd > /dev/null
 fi
-
-message "Creating ${clusterDir}"
-mkdir -p $clusterDir
-
-pushd $clusterDir > /dev/null
-
-if [ ! -z "$cloudConfig" ]; then
-  message "Copying ${cloudConfig} from ${cloudConfigsDir}"
-  cp ${cloudConfigsDir}/install-config-${cloudConfig}.yaml ${clusterDir}/install-config.yaml
-else
-  message "============ PULL SECRET ============"
-  message " "
-  cat $pullSecret | tr -d '\n' | tr -d ' '
-  message "\n"
-  message "====================================="
-fi
-
-message "Creating new cluster at ${releaseVersion}"
-
-openshift-install create cluster --dir ${clusterDir}
-
-message ""
-message "Please run 'export KUBECONFIG=$clusterDir/auth/kubeconfig' to connect to your cluster."
-
-popd > /dev/null
