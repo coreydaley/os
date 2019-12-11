@@ -8,13 +8,14 @@ cat <<EOF
   Optional Arguments:
   --cloudconfig      The name of the cloud configuration file to use. i.e. aws, gce, azure
 
-  --cloudconfigsdir  Path to the folder containing the cloud configuration files
+  --cloudconfigdir   Path to the folder containing the cloud configuration files
                      Defaults to ~/.openshift/configs
 
   --clusterdir       Path to the folder to use for the files created by the installer.
                      Defaults to ~/openshift/cluster
 
   --downloader       Which program to use to download the client and installer.  i.e. oc, curl, wget
+                     Defaults to oc
 
   --ostype           Override the detected operating system. i.e. linux-gnu, darwin
 
@@ -35,6 +36,14 @@ cat <<EOF
 
   -h, --help         Display this help.
 
+  You can find a list of release versions and their supported downloader(s) below:
+
+  URL                                                                     |  Downloader(s)
+  ----------------------------------------------------------------------------------------
+  https://openshift-release.svc.ci.openshift.org/                         |  oc
+  https://mirror.openshift.com/pub/openshift-v4/clients/ocp/              |  curl, wget
+  https://mirror.openshift.com/pub/openshift-v4/clients/ocp-dev-preview/  |  curl, wget
+ 
 EOF
 }
 
@@ -47,8 +56,8 @@ while [ "$1" != "" ]; do
         --cloudconfig )         shift
                                 cloudConfig=$1
                                 ;;
-        --cloudconfigsdir )     shift
-                                cloudConfigsDir=$1
+        --cloudconfigdir )     shift
+                                cloudConfigDir=$1
                                 ;;
         --clusterdir )          shift
                                 clusterDir=$1
@@ -95,7 +104,7 @@ fi
 
 # set sane defaults for any options that were not specified
 cloudConfig=${cloudConfig:-""}
-cloudConfigsDir=${cloudConfigsDir:-"${HOME}/.openshift/configs"}
+cloudConfigDir=${cloudConfigDir:-"${HOME}/.openshift/configs"}
 clusterDir=${clusterDir:-"${HOME}/openshift/cluster"}
 pullSecret=${pullSecret:-"${HOME}/.openshift/pull-secret.json"}
 osType=${osType:=${osTypeDetected}}
@@ -113,14 +122,14 @@ message "Cluster Directory:      ${clusterDir}"
 message "Pull Secret Location:   ${pullSecret}"
 if [ ! -z "$cloudConfig" ]; then
   message "Cloud Config:            ${cloudConfig}"
-  message "Cloud Configs Directory: ${cloudConfigsDir}"
+  message "Cloud Config Directory: ${cloudConfigDir}"
 fi
 
 message ""
 message "---------- Downloading and Installing Client and Installer ----------"
 
 # setup the urls to download the client and installer from when using curl or wget
-baseURL=https://mirror.openshift.com/pub/openshift-v4/clients/ocp/${releaseVersion}
+baseURL=https://mirror.openshift.com/pub/openshift-v4/clients/ocp-dev-preview/${releaseVersion}
 filenames=(client install)
 binaries=(oc openshift-install)
 
@@ -199,8 +208,8 @@ if [ -z "${toolsOnly}" ]; then
   pushd $clusterDir > /dev/null
 
   if [ ! -z "${cloudConfig}" ]; then
-    message "Copying ${cloudConfig} from ${cloudConfigsDir}"
-    cp ${cloudConfigsDir}/install-config-${cloudConfig}.yaml ${clusterDir}/install-config.yaml
+    message "Copying ${cloudConfig} from ${cloudConfigDir}"
+    cp ${cloudConfigDir}/install-config-${cloudConfig}.yaml ${clusterDir}/install-config.yaml
   else
     message "============ PULL SECRET ============"
     message " "
