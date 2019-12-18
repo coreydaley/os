@@ -21,36 +21,64 @@ need to make sure that `~/bin` is on your `PATH`.
 
 ## Usage
 ```
-Usage: os [OPTIONS]...
+  Usage: os [OPTIONS]...
   Download the OpenShift client and installer and launch a cluster.
 
   Optional Arguments:
-  --cloudconfig      The name of the cloud configuration file to use. i.e. aws, gce, azure
 
-  --cloudconfigsdir  Path to the folder containing the cloud configuration files
+ ============================ Cluster Functions ========================================
+
+  --cloud-config     The name of the cloud configuration file to use. i.e. aws, gce, azure
+
+  --cloud-config-dir Path to the folder containing the cloud configuration files
                      Defaults to ~/.openshift/configs
 
-  --clusterdir       Path to the folder to use for the files created by the installer.
+  --cluster-dir      Path to the folder to use for the files created by the installer.
                      Defaults to ~/openshift/cluster
 
   --downloader       Which program to use to download the client and installer.  i.e. oc, curl, wget
+                     Defaults to oc
 
-  --ostype           Override the detected operating system. i.e. linux-gnu, darwin
+  --mirror-url       The url of the mirror that we should look for the client and installer on
 
-  --pullsecret       Path to the file containing your pull secrets.  
+  --os-type          Override the detected operating system. i.e. linux-gnu, darwin
+
+  --pull-secret      Path to the file containing your pull secrets.  
                      Defaults to ~/.openshift/pull-secret.json
 
-  --payloadhost      Host to download the client/installer from when using the oc downloader.
+  --payload-host     Host to download the client/installer from when using the oc downloader.
                      Defaults to registry.svc.ci.openshift.org
 
-  --payloadimage     Image to download from the payloadhost when using the oc downloader.
+  --payload-image    Image to download from the payloadhost when using the oc downloader.
                      Defaults to ocp/release
 
-  --releaseversion   Version to use of the OpenShift client and installer.
+  --release-version  Version to use of the OpenShift client and installer.
                      Defaults to 4.2.9
+
+  You can find a list of release versions and their supported downloader(s) below:
+
+  Payload Host                                                           |  Downloader(s)
+  ----------------------------------------------------------------------------------------
+  registry.svc.ci.openshift.org                                          |  oc
+
+
+  Mirror URL                                                             |  Downloader(s)
+  ----------------------------------------------------------------------------------------
+  https://mirror.openshift.com/pub/openshift-v4/clients/ocp              |  curl, wget
+  https://mirror.openshift.com/pub/openshift-v4/clients/ocp-dev-preview  |  curl, wget
+
+
+  ============================ Utility Functions ==================================
 
   --tools-only       Download and install the OpenShift client and installer only
                      and don't remove a previous cluster or create a new one.
 
+  --disable-cvo      Scales the Cluster Version Operator down to zero (0) so that
+                     it won't overwrite your changes during development
+
+  --enable-cvo       Scales the Cluster Version Operator up to one (1) which will
+                     overwrite any development changes, so beware!                                      
+
   -h, --help         Display this help.
+
 ```
