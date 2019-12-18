@@ -9,38 +9,44 @@ cat <<EOF
 
  ============================ Cluster Functions ========================================
 
-  --cloud-config      The name of the cloud configuration file to use. i.e. aws, gce, azure
+  --cloud-config     The name of the cloud configuration file to use. i.e. aws, gce, azure
 
-  --cloud-config-dir   Path to the folder containing the cloud configuration files
+  --cloud-config-dir Path to the folder containing the cloud configuration files
                      Defaults to ~/.openshift/configs
 
-  --cluster-dir       Path to the folder to use for the files created by the installer.
+  --cluster-dir      Path to the folder to use for the files created by the installer.
                      Defaults to ~/openshift/cluster
 
   --downloader       Which program to use to download the client and installer.  i.e. oc, curl, wget
                      Defaults to oc
 
-  --os-type           Override the detected operating system. i.e. linux-gnu, darwin
+  --mirror-url       The url of the mirror that we should look for the client and installer on
 
-  --pull-secret       Path to the file containing your pull secrets.  
+  --os-type          Override the detected operating system. i.e. linux-gnu, darwin
+
+  --pull-secret      Path to the file containing your pull secrets.  
                      Defaults to ~/.openshift/pull-secret.json
 
-  --payload-host      Host to download the client/installer from when using the oc downloader.
+  --payload-host     Host to download the client/installer from when using the oc downloader.
                      Defaults to registry.svc.ci.openshift.org
 
-  --payload-image     Image to download from the payloadhost when using the oc downloader.
+  --payload-image    Image to download from the payloadhost when using the oc downloader.
                      Defaults to ocp/release
 
-  --release-version   Version to use of the OpenShift client and installer.
+  --release-version  Version to use of the OpenShift client and installer.
                      Defaults to 4.2.9
 
   You can find a list of release versions and their supported downloader(s) below:
 
-  URL                                                                     |  Downloader(s)
+  Payload Host                                                           |  Downloader(s)
   ----------------------------------------------------------------------------------------
-  https://openshift-release.svc.ci.openshift.org/                         |  oc
-  https://mirror.openshift.com/pub/openshift-v4/clients/ocp/              |  curl, wget
-  https://mirror.openshift.com/pub/openshift-v4/clients/ocp-dev-preview/  |  curl, wget
+  registry.svc.ci.openshift.org                                          |  oc
+
+
+  Mirror URL                                                             |  Downloader(s)
+  ----------------------------------------------------------------------------------------
+  https://mirror.openshift.com/pub/openshift-v4/clients/ocp              |  curl, wget
+  https://mirror.openshift.com/pub/openshift-v4/clients/ocp-dev-preview  |  curl, wget
 
 
   ============================ Utility Functions ==================================
@@ -81,6 +87,10 @@ while [ "$1" != "" ]; do
                                 downloader=$1
                                 shift
                                 ;;
+        --mirror-url )          shift
+                                mirrorURL=$1
+                                shift
+                                ;;        
         --os-type )              shift
                                 osType=$1
                                 shift
@@ -158,6 +168,7 @@ fi
 cloudConfig=${cloudConfig:-""}
 cloudConfigDir=${cloudConfigDir:-"${HOME}/.openshift/configs"}
 clusterDir=${clusterDir:-"${HOME}/openshift/cluster"}
+mirrorURL=${mirrorURL:-"https://mirror.openshift.com/pub/openshift-v4/clients/ocp/"}
 pullSecret=${pullSecret:-"${HOME}/.openshift/pull-secret.json"}
 osType=${osType:=${osTypeDetected}}
 releaseVersion=${releaseVersion:-"4.2.9"}
@@ -168,20 +179,19 @@ tmpdir=/tmp/openshift-release
 
 # show the user the config that we are going to use
 message "---------- Using Configuration ----------"
-message "Release Version:        ${releaseVersion}"
-message "Operating System:       ${osType}"
-message "Cluster Directory:      ${clusterDir}"
-message "Pull Secret Location:   ${pullSecret}"
+message "Release Version:           ${releaseVersion}"
+message "Operating System:          ${osType}"
+message "Cluster Directory:         ${clusterDir}"
+message "Pull Secret Location:      ${pullSecret}"
 if [ ! -z "$cloudConfig" ]; then
   message "Cloud Config:            ${cloudConfig}"
-  message "Cloud Config Directory: ${cloudConfigDir}"
+  message "Cloud Config Directory:  ${cloudConfigDir}"
 fi
 
 message ""
 message "---------- Downloading and Installing Client and Installer ----------"
 
 # setup the urls to download the client and installer from when using curl or wget
-baseURL=https://mirror.openshift.com/pub/openshift-v4/clients/ocp/${releaseVersion}
 filenames=(client install)
 binaries=(oc openshift-install)
 
@@ -209,8 +219,9 @@ fi
 if [ -z "$dryRun" ]; then
   rm -rf ${tmpdir}
   mkdir -p ${tmpdir}
+
+  pushd ${tmpdir} > /dev/null
 fi
-pushd ${tmpdir} > /dev/null
 
 # download and extract the files
 if [[ ${downloadCmd} == "oc" ]]; then
@@ -223,7 +234,7 @@ else
   do 
     message "Downloading openshift-${i}-${osType}-${releaseVersion}.tar.gz to ${tmpdir}"
     if [ -z "$dryRun" ]; then
-      $downloadCmd openshift-${i}-${osType}-${releaseVersion}.tar.gz ${baseURL}/openshift-${i}-${osType}-${releaseVersion}.tar.gz
+      $downloadCmd openshift-${i}-${osType}-${releaseVersion}.tar.gz ${mirrorURL}/${releaseVersion}/openshift-${i}-${osType}-${releaseVersion}.tar.gz
     fi
   done
 fi
