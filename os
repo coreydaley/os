@@ -6,35 +6,33 @@ cat <<EOF
   Download the OpenShift client and installer and launch a cluster.
 
   Optional Arguments:
-  --cloudconfig      The name of the cloud configuration file to use. i.e. aws, gce, azure
 
-  --cloudconfigdir   Path to the folder containing the cloud configuration files
+ ============================ Cluster Functions ========================================
+
+  --cloud-config      The name of the cloud configuration file to use. i.e. aws, gce, azure
+
+  --cloud-config-dir   Path to the folder containing the cloud configuration files
                      Defaults to ~/.openshift/configs
 
-  --clusterdir       Path to the folder to use for the files created by the installer.
+  --cluster-dir       Path to the folder to use for the files created by the installer.
                      Defaults to ~/openshift/cluster
 
   --downloader       Which program to use to download the client and installer.  i.e. oc, curl, wget
                      Defaults to oc
 
-  --ostype           Override the detected operating system. i.e. linux-gnu, darwin
+  --os-type           Override the detected operating system. i.e. linux-gnu, darwin
 
-  --pullsecret       Path to the file containing your pull secrets.  
+  --pull-secret       Path to the file containing your pull secrets.  
                      Defaults to ~/.openshift/pull-secret.json
 
-  --payloadhost      Host to download the client/installer from when using the oc downloader.
+  --payload-host      Host to download the client/installer from when using the oc downloader.
                      Defaults to registry.svc.ci.openshift.org
 
-  --payloadimage     Image to download from the payloadhost when using the oc downloader.
+  --payload-image     Image to download from the payloadhost when using the oc downloader.
                      Defaults to ocp/release
 
-  --releaseversion   Version to use of the OpenShift client and installer.
+  --release-version   Version to use of the OpenShift client and installer.
                      Defaults to 4.2.9
-
-  --tools-only       Download and install the OpenShift client and installer only
-                     and don't remove a previous cluster or create a new one.
-
-  -h, --help         Display this help.
 
   You can find a list of release versions and their supported downloader(s) below:
 
@@ -43,6 +41,20 @@ cat <<EOF
   https://openshift-release.svc.ci.openshift.org/                         |  oc
   https://mirror.openshift.com/pub/openshift-v4/clients/ocp/              |  curl, wget
   https://mirror.openshift.com/pub/openshift-v4/clients/ocp-dev-preview/  |  curl, wget
+
+
+  ============================ Utility Functions ==================================
+
+  --tools-only       Download and install the OpenShift client and installer only
+                     and don't remove a previous cluster or create a new one.
+
+  --disable-cvo      Scales the Cluster Version Operator down to zero (0) so that
+                     it won't overwrite your changes during development
+
+  --enable-cvo       Scales the Cluster Version Operator up to one (1) which will
+                     overwrite any development changes, so beware!                                      
+
+  -h, --help         Display this help.
  
 EOF
 }
@@ -53,44 +65,84 @@ message () {
 
 while [ "$1" != "" ]; do
     case $1 in
-        --cloudconfig )         shift
+        --cloud-config )         shift
                                 cloudConfig=$1
+                                shift
                                 ;;
-        --cloudconfigdir )     shift
+        --cloud-config-dir )      shift
                                 cloudConfigDir=$1
+                                shift
                                 ;;
-        --clusterdir )          shift
+        --cluster-dir )          shift
                                 clusterDir=$1
+                                shift
                                 ;;
         --downloader )          shift
                                 downloader=$1
+                                shift
                                 ;;
-        --ostype )              shift
+        --os-type )              shift
                                 osType=$1
+                                shift
                                 ;;
-        --payloadhost )         shift
+        --payload-host )         shift
                                 payloadHost=$1
+                                shift
                                 ;;  
-        --payloadimage )        shift
+        --payload-image )        shift
                                 payloadImage=$1
+                                shift
                                 ;;  
-        --pullsecret )          shift
+        --pull-secret )          shift
                                 pullSecret=$1
+                                shift
                                 ;;  
-        --releaseversion )      shift
+        --release-version )      shift
                                 releaseVersion=$1
+                                shift
                                 ;;   
         --tools-only )          shift
                                 toolsOnly=true
-                                ;;                                                           
+                                ;;    
+        --disable-cvo )         shift
+                                disableCVO=true
+                                ;;   
+        --enable-cvo )          shift
+                                enableCVO=true
+                                ;;  
+        --dry-run )             shift
+                                dryRun=true
+                                ;;                                                                                  
         -h | --help )           usage
                                 exit
                                 ;;
-        * )                     usage
+        * )                     
+                                usage
+                                echo "Flag not found: ${1}"
                                 exit 1
     esac
-    shift
 done
+
+if [ ! -z "$dryRun" ]; then
+  message "Dry run only!  No commands are being executed, only messages are displayed."
+fi
+# disable the Cluster Version Operator
+if [ ! -z "$disableCVO" ]; then
+    message "Scaling the Cluster Version Operator to zero (0)"
+    if [ -z "$dryRun" ]; then
+      oc patch deployment/cluster-version-operator -n openshift-cluster-version -p='{"spec":{"replicas":0}}'
+    fi
+    exit 0
+fi
+
+# enable the Cluster Version Operator
+if [ ! -z "$enableCVO" ]; then
+    message "Scaling the Cluster Version Operator to one (1)"
+    if [ -z "$dryRun" ]; then
+      oc patch deployment/cluster-version-operator -n openshift-cluster-version -p='{"spec":{"replicas":1}}'
+    fi
+    exit 0
+fi
 
 # detect the operating system and set the type for the client and installer
 if [[ "$OSTYPE" == "linux-gnu" ]]; then
@@ -129,7 +181,7 @@ message ""
 message "---------- Downloading and Installing Client and Installer ----------"
 
 # setup the urls to download the client and installer from when using curl or wget
-baseURL=https://mirror.openshift.com/pub/openshift-v4/clients/ocp-dev-preview/${releaseVersion}
+baseURL=https://mirror.openshift.com/pub/openshift-v4/clients/ocp/${releaseVersion}
 filenames=(client install)
 binaries=(oc openshift-install)
 
@@ -154,30 +206,38 @@ else
 fi
 
 # create a temporary directory to download the files to
-rm -rf ${tmpdir}
-mkdir -p ${tmpdir}
+if [ -z "$dryRun" ]; then
+  rm -rf ${tmpdir}
+  mkdir -p ${tmpdir}
+fi
 pushd ${tmpdir} > /dev/null
 
 # download and extract the files
 if [[ ${downloadCmd} == "oc" ]]; then
   message "Downloading openshift client and installer to ${tmpdir}"
-  oc adm release extract --tools --to ${tmpdir} -a ${pullSecret} "${host}/${image}:${releaseVersion}"
+  if [ -z "$dryRun" ]; then
+    oc adm release extract --tools --to ${tmpdir} -a ${pullSecret} "${host}/${image}:${releaseVersion}"
+  fi
 else
   for i in "${filenames[@]}"
   do 
     message "Downloading openshift-${i}-${osType}-${releaseVersion}.tar.gz to ${tmpdir}"
-    $downloadCmd openshift-${i}-${osType}-${releaseVersion}.tar.gz ${baseURL}/openshift-${i}-${osType}-${releaseVersion}.tar.gz
+    if [ -z "$dryRun" ]; then
+      $downloadCmd openshift-${i}-${osType}-${releaseVersion}.tar.gz ${baseURL}/openshift-${i}-${osType}-${releaseVersion}.tar.gz
+    fi
   done
 fi
 
 for i in "${filenames[@]}"
 do 
-  if [ ! -f openshift-${i}-${osType}-${releaseVersion}.tar.gz ]; then
+  if [[ ! -f openshift-${i}-${osType}-${releaseVersion}.tar.gz  && -z "$dryRun" ]]; then
       message "Failed to download openshift-${i}-${osType}-${releaseVersion}.tar.gz, exiting ..."
       exit 1
   fi
   message "Extracting openshift-${i}-${osType}-${releaseVersion}.tar.gz"
-  tar -xzf openshift-${i}-${osType}-${releaseVersion}.tar.gz
+  if [ -z "$dryRun" ]; then
+    tar -xzf openshift-${i}-${osType}-${releaseVersion}.tar.gz
+  fi
 done
 
 # copy the binaries to ~/bin which should be in the users PATH
@@ -187,29 +247,42 @@ fi
 for i in "${binaries[@]}"
 do
   message "Copying ${i} binary to ${HOME}/bin"
-  cp -f ${i} ${HOME}/bin/
+  if [ -z "$dryRun" ]; then
+    cp -f ${i} ${HOME}/bin/
+  fi
 done
 
-popd > /dev/null
-
+if [ -z "$dryRun" ]; then
+  popd > /dev/null
+fi
 
 if [ -z "${toolsOnly}" ]; then
 
   if [ -f "${clusterDir}/metadata.json" ]; then
     message "Destroying previous cluster at ${clusterDir}"
-    openshift-install destroy cluster --dir ${clusterDir}
+    if [ -z "$dryRun" ]; then
+      openshift-install destroy cluster --dir ${clusterDir}
+    fi
     message "Removing ${clusterDir}"
-    rm -rf ${clusterDir}
+    if [ -z "$dryRun" ]; then
+      rm -rf ${clusterDir}
+    fi
   fi
 
   message "Creating ${clusterDir}"
-  mkdir -p $clusterDir
+  if [ -z "$dryRun" ]; then
+    mkdir -p $clusterDir
+  fi
 
-  pushd $clusterDir > /dev/null
+  if [ -z "$dryRun" ]; then
+    pushd $clusterDir > /dev/null
+  fi
 
   if [ ! -z "${cloudConfig}" ]; then
     message "Copying ${cloudConfig} from ${cloudConfigDir}"
-    cp ${cloudConfigDir}/install-config-${cloudConfig}.yaml ${clusterDir}/install-config.yaml
+    if [ -z "$dryRun" ]; then
+      cp ${cloudConfigDir}/install-config-${cloudConfig}.yaml ${clusterDir}/install-config.yaml
+    fi
   else
     message "============ PULL SECRET ============"
     message " "
@@ -220,10 +293,13 @@ if [ -z "${toolsOnly}" ]; then
 
   message "Creating new cluster at ${releaseVersion}"
 
-  openshift-install create cluster --dir ${clusterDir}
+  if [ -z "$dryRun" ]; then
+    openshift-install create cluster --dir ${clusterDir}
+  fi
 
   message ""
   message "Please run 'export KUBECONFIG=$clusterDir/auth/kubeconfig' to connect to your cluster."
-
-  popd > /dev/null
+  if [ -z "$dryRun" ]; then
+    popd > /dev/null
+  fi
 fi
