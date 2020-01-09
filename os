@@ -58,7 +58,11 @@ cat <<EOF
                      it won't overwrite your changes during development
 
   --enable-cvo       Scales the Cluster Version Operator up to one (1) which will
-                     overwrite any development changes, so beware!                                      
+                     overwrite any development changes, so beware!    
+
+  --show             pullsecret - Shows the pullsecret from ~/.openshift/pull-secret.json
+                                  or a location specified with --pull-secret
+                                  Removes newlines.                                  
 
   -h, --help         Display this help.
  
@@ -71,15 +75,15 @@ message () {
 
 while [ "$1" != "" ]; do
     case $1 in
-        --cloud-config )         shift
+        --cloud-config )        shift
                                 cloudConfig=$1
                                 shift
                                 ;;
-        --cloud-config-dir )      shift
+        --cloud-config-dir )    shift
                                 cloudConfigDir=$1
                                 shift
                                 ;;
-        --cluster-dir )          shift
+        --cluster-dir )         shift
                                 clusterDir=$1
                                 shift
                                 ;;
@@ -103,11 +107,15 @@ while [ "$1" != "" ]; do
                                 payloadImage=$1
                                 shift
                                 ;;  
-        --pull-secret )          shift
+        --pull-secret )         shift
                                 pullSecret=$1
                                 shift
                                 ;;  
-        --release-version )      shift
+        --ssh-pubkey )          shift
+                                sshPublicKey=$1
+                                shift
+                                ;;
+        --release-version )     shift
                                 releaseVersion=$1
                                 shift
                                 ;;   
@@ -120,6 +128,10 @@ while [ "$1" != "" ]; do
         --enable-cvo )          shift
                                 enableCVO=true
                                 ;;  
+       --show )                 shift
+                                show=$1
+                                shift
+                                ;; 
         --dry-run )             shift
                                 dryRun=true
                                 ;;                                                                                  
@@ -133,9 +145,12 @@ while [ "$1" != "" ]; do
     esac
 done
 
+
+
 if [ ! -z "$dryRun" ]; then
   message "Dry run only!  No commands are being executed, only messages are displayed."
 fi
+
 # disable the Cluster Version Operator
 if [ ! -z "$disableCVO" ]; then
     message "Scaling the Cluster Version Operator to zero (0)"
@@ -160,7 +175,7 @@ if [[ "$OSTYPE" == "linux-gnu" ]]; then
 elif [[ "$OSTYPE" == "darwin"* ]]; then
         osTypeDetected=mac
 else
-  message "Unable to identify your operating system. Please specify using --ostype"
+  message "Unable to identify your operating system. Please specify using --os-type"
   exit 1
 fi
 
@@ -170,12 +185,21 @@ cloudConfigDir=${cloudConfigDir:-"${HOME}/.openshift/configs"}
 clusterDir=${clusterDir:-"${HOME}/openshift/cluster"}
 mirrorURL=${mirrorURL:-"https://mirror.openshift.com/pub/openshift-v4/clients/ocp/"}
 pullSecret=${pullSecret:-"${HOME}/.openshift/pull-secret.json"}
+sshPublicKey=${sshPublicKey:-"${HOME}/.ssh/id_rsa.pub"}
 osType=${osType:=${osTypeDetected}}
 releaseVersion=${releaseVersion:-"4.2.9"}
 downloader=${downloader:-""}
 host=${payloadHost:-"registry.svc.ci.openshift.org"}
 image=${payloadImage:-"ocp/release"}
 tmpdir=/tmp/openshift-release
+
+if [ ! -z "$show" ]; then
+  if [[ "$show" == "pullsecret" ]]; then
+    cat $pullSecret | tr -d '\n' | tr -d ' '
+    echo ""
+  fi
+  exit 0
+fi
 
 # show the user the config that we are going to use
 message "---------- Using Configuration ----------"
@@ -291,15 +315,15 @@ if [ -z "${toolsOnly}" ]; then
 
   if [ ! -z "${cloudConfig}" ]; then
     message "Copying ${cloudConfig} from ${cloudConfigDir}"
-    if [ -z "$dryRun" ]; then
-      cp ${cloudConfigDir}/install-config-${cloudConfig}.yaml ${clusterDir}/install-config.yaml
-    fi
-  else
-    message "============ PULL SECRET ============"
-    message " "
-    cat $pullSecret | tr -d '\n' | tr -d ' '
-    message "\n"
-    message "====================================="
+      PullSecret=$(cat $pullSecret | tr -d '\n' | tr -d ' ')
+      SSHPublicKey=$(cat $sshPublicKey)
+      if [ -z "$dryRun" ]; then
+        eval "echo \"$(cat ${cloudConfigDir}/install-config-${cloudConfig}.yaml.tmpl)\"" > ${clusterDir}/install-config.yaml
+      else
+        message "---------- Rendered Cloud Config ----------"
+        eval "echo \"$(cat ${cloudConfigDir}/install-config-${cloudConfig}.yaml.tmpl)\"" 
+        message "-------------------------------------------"
+      fi
   fi
 
   message "Creating new cluster at ${releaseVersion}"

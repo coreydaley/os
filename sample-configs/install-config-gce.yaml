@@ -12,7 +12,7 @@ controlPlane:
   replicas: 3
 metadata:
   creationTimestamp: null
-  name: <name>
+  name: $USER
 networking:
   clusterNetwork:
   - cidr: 10.128.0.0/14
@@ -24,7 +24,7 @@ networking:
 platform:
   gcp:
     projectID: openshift-gce-devel
-    region: <region>
-pullSecret: <pullsecret>
+    region: us-west1
+pullSecret: $PullSecret
 sshKey: |
-  <publickey>
+  $SSHPublicKey

@@ -12,7 +12,7 @@ controlPlane:
   replicas: 3
 metadata:
   creationTimestamp: null
-  name: <name>
+  name: $USER
 networking:
   clusterNetwork:
   - cidr: 10.128.0.0/14
@@ -30,7 +30,7 @@ networking:
   type: OpenShiftSDN
 platform:
   aws:
-    region: <region>
-pullSecret: <pullsecret>
+    region: us-west-1
+pullSecret: $PullSecret
 sshKey: |
-  <publickey>
+  $SSHPublicKey
