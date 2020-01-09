@@ -66,7 +66,9 @@ cat <<EOF
 
   --update-image     cro - Tags docker.io/openshift/origin-cluster-image-registry-operator:latest to 
                            quay.io/<username>/origin-cluster-image-registry-operator:dev<random>
-                           and then patches the deployment/cluster-image-registry-operator to use it                        
+                           and then patches the deployment/cluster-image-registry-operator to use it  
+
+  --quay-user         The username on quay.io that the image from --update-image should be pushed to.                                                 
    
   --show             pullsecret - Shows the pullsecret from ~/.openshift/pull-secret.json
                                   or a location specified with --pull-secret
