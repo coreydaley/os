@@ -9,8 +9,15 @@ with a development environment for [OpenShift Origin](https://openshift.org) fas
 
 ### Using Install Configs
 You can create install configs using the `openshift-install create install-config` command  
-and store them in `$HOME/.openshift/configs` and use them with this script using the `os --cloudconfig <type>` where `<type>` is one of aws, gce, or azure.  
-You will need to name your install configs like `install-config-<type>.yaml` for this script to pick them up.
+and store them in `$HOME/.openshift/configs` and use them with this script using the `os --cloud-config <type>` where `<type>` is one of aws, gce, or azure.  
+You can templatize them by replacing the generated pull secret with `$PullSecret` and the ssh key with `$SSHPublicKey`
+and the script will auto-populate them for you when the configs are copied. See the provided example configs in the `sample-configs`
+folder in this repository for more information.
+You will need to name your install configs like `install-config-<type>.yaml.tmpl` for this script to pick them up.
+
+### Pull Secret
+You will need to store your pull secrets in `~/.openshift/pull-secret.json` for them to be picked up by this script, or use
+`--pull-secret` to set the location that you would like to use.
 
 ## os
 It is recommended that you symlink this file into your `~/bin` directory
