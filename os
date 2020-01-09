@@ -58,7 +58,8 @@ cat <<EOF
                      it won't overwrite your changes during development
 
   --enable-cvo       Scales the Cluster Version Operator up to one (1) which will
-                     overwrite any development changes, so beware!    
+                     overwrite any development changes, so beware!   
+   
 
   --show             pullsecret - Shows the pullsecret from ~/.openshift/pull-secret.json
                                   or a location specified with --pull-secret
@@ -122,12 +123,22 @@ while [ "$1" != "" ]; do
         --tools-only )          shift
                                 toolsOnly=true
                                 ;;    
-        --disable-cvo )         shift
-                                disableCVO=true
+        --disable )             shift
+                                disable=$1
+                                shift
                                 ;;   
-        --enable-cvo )          shift
-                                enableCVO=true
+        --enable )              shift
+                                enable=$1
+                                shift
                                 ;;  
+        --update-image )        shift
+                                updateImage=$1
+                                shift
+                                ;;
+        --quay-user )           shift
+                                quayUser=$1
+                                shift
+                                ;;                                
        --show )                 shift
                                 show=$1
                                 shift
@@ -152,19 +163,23 @@ if [ ! -z "$dryRun" ]; then
 fi
 
 # disable the Cluster Version Operator
-if [ ! -z "$disableCVO" ]; then
-    message "Scaling the Cluster Version Operator to zero (0)"
+if [ ! -z "$disable" ]; then
     if [ -z "$dryRun" ]; then
-      oc patch deployment/cluster-version-operator -n openshift-cluster-version -p='{"spec":{"replicas":0}}'
+      if [[ "$disable" == "cvo" ]]; then
+        message "Scaling the Cluster Version Operator to zero (0)"
+        oc patch deployment/cluster-version-operator -n openshift-cluster-version -p='{"spec":{"replicas":0}}'
+      fi
     fi
     exit 0
 fi
 
 # enable the Cluster Version Operator
-if [ ! -z "$enableCVO" ]; then
-    message "Scaling the Cluster Version Operator to one (1)"
+if [ ! -z "$enable" ]; then
     if [ -z "$dryRun" ]; then
-      oc patch deployment/cluster-version-operator -n openshift-cluster-version -p='{"spec":{"replicas":1}}'
+      if [[ "$enable" == "cvo" ]]; then
+      message "Scaling the Cluster Version Operator to one (1)"
+        oc patch deployment/cluster-version-operator -n openshift-cluster-version -p='{"spec":{"replicas":1}}'
+      fi
     fi
     exit 0
 fi
@@ -191,12 +206,27 @@ releaseVersion=${releaseVersion:-"4.2.9"}
 downloader=${downloader:-""}
 host=${payloadHost:-"registry.svc.ci.openshift.org"}
 image=${payloadImage:-"ocp/release"}
+quayUser=${quayUser:-$USER}
 tmpdir=/tmp/openshift-release
 
 if [ ! -z "$show" ]; then
   if [[ "$show" == "pullsecret" ]]; then
     cat $pullSecret | tr -d '\n' | tr -d ' '
     echo ""
+  fi
+  exit 0
+fi
+
+if [ ! -z "$updateImage" ]; then
+  message "Updating image for ${updateImage}"
+  randomNumber=$RANDOM
+  if [ -z "$dryRun" ]; then
+    if [[ "$updateImage" == "cro" ]]; then
+      croImage=quay.io/${quayUser}/origin-cluster-image-registry-operator:dev${randomNumber}
+      docker tag docker.io/openshift/origin-cluster-image-registry-operator:latest ${croImage}
+      docker push ${croImage}
+      oc patch deployment/cluster-image-registry-operator -n openshift-image-registry -p='{"spec":{"template":{"spec":{"containers":[{"name":"cluster-image-registry-operator", "image":"'${croImage}'"}]}}}}'
+    fi
   fi
   exit 0
 fi
