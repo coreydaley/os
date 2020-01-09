@@ -27,6 +27,10 @@ cat <<EOF
   --pull-secret      Path to the file containing your pull secrets.  
                      Defaults to ~/.openshift/pull-secret.json
 
+  --ssh-pubkey       Path to your ssh public key that should be used for
+                     the cluster installation.
+                     Defaults to ~/.ssh/id_rsa.pub                     
+
   --payload-host     Host to download the client/installer from when using the oc downloader.
                      Defaults to registry.svc.ci.openshift.org
 
@@ -54,13 +58,16 @@ cat <<EOF
   --tools-only       Download and install the OpenShift client and installer only
                      and don't remove a previous cluster or create a new one.
 
-  --disable-cvo      Scales the Cluster Version Operator down to zero (0) so that
-                     it won't overwrite your changes during development
+  --disable          cvo - Scales the Cluster Version Operator down to zero (0) so that
+                           it won't overwrite your changes during development
 
-  --enable-cvo       Scales the Cluster Version Operator up to one (1) which will
-                     overwrite any development changes, so beware!   
+  --enable           cvo - Scales the Cluster Version Operator up to one (1) which will
+                           overwrite any development changes, so beware!  
+
+  --update-image     cro - Tags docker.io/openshift/origin-cluster-image-registry-operator:latest to 
+                           quay.io/<username>/origin-cluster-image-registry-operator:dev<random>
+                           and then patches the deployment/cluster-image-registry-operator to use it                        
    
-
   --show             pullsecret - Shows the pullsecret from ~/.openshift/pull-secret.json
                                   or a location specified with --pull-secret
                                   Removes newlines.                                  
