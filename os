@@ -55,6 +55,8 @@ cat <<EOF
 
   ============================ Utility Functions ==================================
 
+  --destroy-only     Destroy the current cluster and then exit.
+
   --tools-only       Download and install the OpenShift client and installer only
                      and don't remove a previous cluster or create a new one.
 
@@ -132,6 +134,9 @@ while [ "$1" != "" ]; do
         --tools-only )          shift
                                 toolsOnly=true
                                 ;;    
+        --destroy-only )        shift
+                                destroyOnly=true
+                                ;; 
         --disable )             shift
                                 disable=$1
                                 shift
@@ -341,6 +346,10 @@ if [ -z "${toolsOnly}" ]; then
     if [ -z "$dryRun" ]; then
       rm -rf ${clusterDir}
     fi
+  fi
+
+  if [ ! -z "$destroyOnly" ]; then
+    exit 0
   fi
 
   message "Creating ${clusterDir}"
